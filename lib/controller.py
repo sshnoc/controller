@@ -246,6 +246,9 @@ class Controller(Application):
       except FileExistsError:
         self.log( level = 'error', message = "FATAL - Cannot create node directory" )
         sys.exit(1)
+      except FileNotFoundError:
+        self.log( level = 'error', message = "FATAL - Missing SSH keys. Try to generate keys with genkey!" )
+        sys.exit(1)
       except Exception as exc:
         self.log( level = 'error', message = "(init) %s" % repr(exc) )
         sys.exit(1)

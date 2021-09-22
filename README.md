@@ -21,7 +21,7 @@ Clone the repositoy:
 git clone https://github.com/sshnoc/controller.git
 ```
 
-Run the install scripts. Currently Python 3.8 is supported.
+Run the install scripts:
 ```bash
 cd /opt/sshnoc/controller
 ./mkvenv && ./install
@@ -93,4 +93,4 @@ You should see the following output:
 Now your SSH client is successfully connected to the controller server and TCP port 8000 is reverse forwarded from the socket file above. Please mind that due to a simple implementation of the socket file forwarding it is mandatory to name socket files on the server as `./nodes/<Node Id>/<Port>.sock`
 
 ### Production
-In production you need a server with a public interface. Start a Mongo database. Select a free port and a Server Id. Install and start the server on that port like above. Open that port in the firewall. Select a Node Id. Generate SSH keys on the clients and create the node with the public key in the admin shell. Now you can connect with a simple SSH command. Probably you also need automation. On the server side you can use supervisor or systemd to start the server in the background. On the client side use autossh or a simple shell script with nohup.
+In production you need a server with a public interface. Start a Mongo database. Select a free port and a Server Id. Install and start the server on that port like above. Open that port in the firewall. Select a Node Id. Generate SSH keys on the clients and create the node with the public key in the admin shell. Now you can connect with a simple SSH command. Likely you need automation. On the server side you can use supervisor or systemd to start the server in the background. On the client side use autossh or a simple shell script with nohup.
