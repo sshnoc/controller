@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+
+# DOTENV=.env.local python sshserver.py
+
+dname=$(dirname "$0")
+bname=$(basename "$0")
+
+is_docker="no"
+if [ -r /proc/1/cgroup ] ; then
+  if grep -q docker /proc/1/cgroup ; then 
+    is_docker="yes"
+  fi
+fi
+
+if [ "$is_docker" = "no" ] ; then
+  source venv/bin/activate
+fi
+
+if [ -r "${bname}.so" ] ; then
+  exec python -c "from ${bname} import ${bname}; ${bname}()" $*
+fi
+
+if [ -r "${bname}.pyc" ] ; then
+  exec python "${bname}.pyc" $*
+fi
+
+if [ -r "${bname}.py" ] ; then
+  exec python "${bname}.py" $*
+fi

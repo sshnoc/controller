@@ -1,0 +1,24 @@
+---
+#
+# https://github.com/linuxserver/docker-openssh-server
+#
+version: "2.1"
+services:
+  sshnoc-mongo-tests:
+    image: mongo
+    container_name: sshnoc-mongo-test
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: root
+    volumes:
+      # - ./data:/data
+      # - ./keyfile:/keyfile:ro
+      # if you wish to setup additional user accounts specific per DB or with different roles you can use following entry point
+      - ./mongo-entrypoint/:/docker-entrypoint-initdb.d/
+    expose:
+      - 27019
+    ports:
+      - 127.0.0.1:27019:27017
+    command: mongod --auth
+    # command: mongod --auth --replSet rs0 --keyFile /keyfile
+

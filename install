@@ -1,0 +1,4 @@
+#!/bin/bash
+_dirname=$(dirname $0)
+source "${_dirname}/venv/bin/activate"
+pip install -r requirements.txt

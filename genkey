@@ -1,0 +1,108 @@
+#!/bin/bash
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd -P)
+
+  # -t dsa | ecdsa | ed25519 | rsa
+  #   Specifies the type of key to create.  The possible values are ``dsa'', ``ecdsa'', ``ed25519'', or ``rsa''.
+  # -b bits
+  #   Specifies the number of bits in the key to create.  For RSA keys, the minimum size is 1024 bits and the default is 2048 bits.  Generally, 2048 bits is considered suffi-
+  #   cient.  DSA keys must be exactly 1024 bits as specified by FIPS 186-2.  For ECDSA keys, the -b flag determines the key length by selecting from one of three elliptic
+  #   curve sizes: 256, 384 or 521 bits.  Attempting to use bit lengths other than these three values for ECDSA keys will fail.  Ed25519 keys have a fixed length and the -b
+  #   flag will be ignored.
+
+  # keytype keybits
+  # rsa     1024 2048 3072 4096
+  # dsa     1024
+  # ecdsa   256 384 521
+  # ed25519 -
+
+## VARS
+pid="${script_dir}/${BASH_SOURCE[0]}.pid"
+
+usage() {
+  cat <<EOF
+USAGE: TODO
+EOF
+}
+
+msg() {
+  echo >&2 -e "${1-}"
+}
+
+die() {
+  local msg=$1
+  local code=${2-1} # default exit status 1
+  msg "$msg"
+  exit "$code"
+}
+
+## ARGUMENTS
+_type="ecdsa"
+_bits=256
+_id="noc"
+parse_params() {
+  while :; do
+    case "${1-}" in
+    -h | --help) usage ;;
+    --id) # example named parameter
+      _id="${2-}"
+      shift
+      ;;
+    -t) # example named parameter
+      _type="${2-}"
+      shift
+      ;;
+    -b) # example named parameter
+      _bits="${2-}"
+      shift
+      ;;
+    # -?*) die "Unknown option: $1" ;;
+    *) break ;;
+    esac
+    shift
+  done
+  args=("$@")
+  # check required params and arguments
+  [[ -z "${_id-}" ]] && die "Missing required parameter: noc"
+  # [[ ${#args[@]} -eq 0 ]] && die "Missing script arguments"
+  return 0
+}
+
+parse_params "$@"
+if [ "${_kill}" = "yes" ]; then
+  if [ -r "${pid}" ]; then
+    kill $(cat "${pid}")
+    exit $?
+  fi
+  echo "${BASH_SOURCE[0]} not running"
+  exit 1
+fi
+
+## CLEANUP
+# trap cleanup SIGINT SIGTERM ERR EXIT
+# function cleanup() {
+#   trap - SIGINT SIGTERM ERR EXIT
+#   echo "Cleanup done. Shutdown..."
+#   exit 0
+# }
+
+function prepare() {
+  if [ ! -d "${PWD}/ssh" ] ; then
+    mkdir "${PWD}/ssh"
+  fi
+}
+
+## MAIN
+ssh_keygen=$(which ssh-keygen)
+prepare
+
+key="./${_id}_host_${_type}_key"
+createdAt=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+comment=""
+
+pushd "${PWD}/ssh" &> /dev/null
+  if [ -r "$key" ] ; then
+    die "Host key exists: ${key}. Delete first!"
+  fi
+  "$ssh_keygen" -f "$key" -N '' -C "$comment" -t "${_type}" -b "${_bits}"
+  "$ssh_keygen" -l -f "$key" | awk '{print $2}' > "${key}.fp"
+popd &> /dev/null

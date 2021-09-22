@@ -1,0 +1,219 @@
+#!/bin/bash
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd -P)
+
+msg() {
+  echo >&2 -e "${1-}"
+}
+
+die() {
+  local msg=$1
+  local code=${2-1} # default exit status 1
+  msg "$msg"
+  exit "$code"
+}
+
+
+
+## PARAMETERS
+client_pubkey=""
+_mongo_status="offline"
+_id="test"
+_run="server"
+_delay=60
+
+parse_params() {
+  while :; do
+    case "${1-}" in
+    -h | --help) usage ;;
+    --id) # example named parameter
+      _id="${2-}"
+      shift
+      ;;
+    --run)
+      _run="${2-}"
+      shift
+      ;;
+    --delay)
+      _delay="${2-}"
+      shift
+      ;;
+    # -?*) die "Unknown option: $1" ;;
+    *) break ;;
+    esac
+    shift
+  done
+  args=("$@")
+  # check required params and arguments
+  [[ -z "${_id-}" ]] && die "Missing required parameter: id"
+  [[ -z "${_run-}" ]] && die "Missing required parameter: run"
+  # [[ ${#args[@]} -eq 0 ]] && die "Missing script arguments"
+  return 0
+}
+parse_params "$@"
+
+
+function init_ssh() {
+  pushd "$script_dir" &> /dev/null
+  ## SSH Keys
+  if [ -d ./ssh ] ; then
+    echo "WARNING: Directory ./ssh exists"
+  else
+    mkdir ./ssh
+  fi
+
+  key="./${_id}_host_rsa_key"
+  if [ -r "${key}" ] ; then
+    echo "WARNING: SSH Key ${key} exists"
+  else
+    ./genkey --id "${_id}" -t rsa -b 2048
+  fi
+
+  key="./${_id}_host_ecdsa_key"
+  if [ -r "${key}" ] ; then
+    echo "WARNING: SSH Key ${key} exists"
+  else
+    ./genkey --id "${_id}" -t ecdsa
+  fi
+
+  key="./${_id}_host_ed25519_key"
+  if [ -r "${key}" ] ; then
+    echo "WARNING: SSH Key ${key} exists"
+  else
+    ./genkey --id "${_id}" -t ed25519
+  fi
+  popd &> /dev/null
+}
+
+
+## Start Mongo DB
+function start_mongo() {
+  pushd "$script_dir" &> /dev/null
+  pushd ./mongo &> /dev/null
+  docker-compose up -d
+
+  while true ; do
+    _ok=$(mongo -u root -p root mongodb://localhost:27019 --quiet --eval "printjson( db.runCommand( { ismaster: 1 } ) )" | grep \"ok\" | awk '{print $3}')
+    if [ "x${_ok}" == "x1" ]; then
+      break
+    fi 
+    sleep 2
+  done
+  echo "MongoDB started"
+  mongo_status="online"
+
+  popd &> /dev/null
+  popd &> /dev/null
+}
+
+
+## Stop Mongo DB
+function stop_mongo() {
+  pushd "$script_dir" &> /dev/null
+  pushd ./mongo &> /dev/null
+  docker-compose down
+  mongo_status="offline"
+  popd &> /dev/null
+  popd &> /dev/null
+}
+
+
+## Generate Client
+function init_client() {
+  pushd "$script_dir" &> /dev/null
+  pushd ./ssh &> /dev/null
+  if [ -r ./client ] ; then
+    echo "WARNING: Client SSH key exists"
+  else
+    ssh-keygen -N "" -f client
+  fi
+
+client_pubkey=$(cat ./client.pub)
+  popd &> /dev/null
+  popd &> /dev/null
+}
+
+function start_client() {
+  pushd "$script_dir" &> /dev/null
+  while true ; do
+    _server_status=$(curl -s http://localhost:2380/status)
+    if [ "${_server_status}" == "online" ] ; then
+      break
+    fi
+    sleep 3
+    continue
+  done
+
+  echo "add-ssh-node --id client --pubkey \"$client_pubkey}\"" | ./adminshell --mongo_uri mongodb://root:root@localhost:27019 --mongo_db sshnoc
+  echo "Client public key added"
+  sleep 1
+  ssh -o VisualHostKey=no -o StrictHostKeyChecking=accept-new \
+    -o UserKnownHostsFile=./ssh/known_hosts -R ./nodes/client/2244.sock:localhost:2244 \
+    -i ./ssh/client -p 2322 client@localhost
+  echo "Stopping..."
+  stop_mongo
+  sleep 1
+  tmux kill-session -t test
+
+  popd &> /dev/null
+}
+
+
+## Init Database
+function init_db() {
+  pushd "$script_dir" &> /dev/null
+  ./sshserver --debug --id test --mongo_uri mongodb://root:root@localhost:27019 --mongo_db sshnoc --init_db
+  popd &> /dev/null
+}
+
+function start_server() {
+  pushd "$script_dir" &> /dev/null
+  ./sshserver --id test --mongo_uri mongodb://root:root@localhost:27019 --mongo_db sshnoc --debug --ssh_port 2322 --http_admin_port 2380
+  popd &> /dev/null
+}
+
+function start_test() {
+  tmux new-session -d -s test -n "Test Server"
+  tmux split-window -v -t test:0
+  tmux split-window -h -t test:0.1
+  tmux send-keys -t test:0.0 "cd \"$script_dir\"; ./test-server --run start" C-m
+  tmux send-keys -t test:0.1 "cd \"$script_dir\"; ./test-server --run stop --delay 60" C-m
+  tmux send-keys -t test:0.2 "cd \"$script_dir\"; ./test-server --run client" C-m
+  tmux select-window -t test:0.1
+  tmux attach -t test
+}
+
+## MAIN
+case ${_run} in
+  start)
+    echo
+    init_ssh
+    echo ""
+    start_mongo
+    echo ""
+    init_db
+    echo ""
+    start_server
+    ;;
+  
+  stop)
+    sleep ${_delay}
+    stop_mongo
+    tmux kill-session -t test
+    ;;
+
+  client)
+    echo
+    init_client
+    echo ""
+    start_client
+    ;;
+
+  test)
+    start_test
+    ;;
+
+  *)
+    echo -n "unknown"
+    ;;
+esac
+
