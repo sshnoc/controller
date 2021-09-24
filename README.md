@@ -18,13 +18,14 @@ sudo setfacl -m u:${USER}:rwX /opt/sshnoc
 
 Clone the repositoy:
 ```bash
-git clone https://github.com/sshnoc/controller.git
+sudo yum install git # optional
+cd /opt/sshnoc && git clone https://github.com/sshnoc/controller.git
 ```
 
 Run the install scripts:
 ```bash
-cd /opt/sshnoc/controller
-./mkvenv && ./install
+sudo yum install python39 # optional
+cd /opt/sshnoc/controller && ./mkvenv && ./install
 ```
 
 At this point you should be able to run the controller although it will fail since there are no ssh keys and there is no database present. Test run the controller:
@@ -33,14 +34,14 @@ At this point you should be able to run the controller although it will fail sin
 ```
 
 ### Start Server
-Each controller server has a unique id (Controller Id) that you should decide now. In the folowing exmaples we use 'test' as the Controller Id. In order to use the controller server you need to generte SSH keys. There is small utility script to generate SSH keys:
+Each controller server has a unique id (Controller Id) that you should decide now. In the folowing exmaples we use 'controller' as the Controller Id. In order to use the controller server you need to generte SSH keys. There is small utility script to generate SSH keys:
 
 ```bash
 cd /opt/sshnoc/controller
 mkdir ./ssh
-./genkey --id "test" -t rsa -b 2048
-./genkey --id "test" -t ecdsa
-./genkey --id "test" -t ed25519
+./genkey --id "controller" -t rsa -b 2048
+./genkey --id "controller" -t ecdsa
+./genkey --id "controller" -t ed25519
 ```
 
 Next, you need a MongoDB database. Spin up a dockerized Mongo on the local machine:
@@ -52,8 +53,8 @@ docker-compose up
 
 First, initialize the database then start the controller:
 ```bash
-./sshserver --id test --mongo_uri mongodb://root:root@localhost:27019 --mongo_db sshnoc --init_db
-./sshserver --id test --mongo_uri mongodb://root:root@localhost:27019 --mongo_db sshnoc --debug --ssh_port 2322 --http_admin_port 2380
+./sshserver --mongo_uri mongodb://root:root@localhost:27019 --mongo_db sshnoc --init_db
+./sshserver --mongo_uri mongodb://root:root@localhost:27019 --mongo_db sshnoc --debug --ssh_port 2322 --http_admin_port 2380
 ```
 
 ### Test Client
@@ -61,14 +62,14 @@ Each client node has a unique id (Node Id) that you should decide now. In the fo
 
 ```bash
 cd /opt/sshnoc/controller/ssh
-ssh-keygen -N "" -f client
-cat ssh/client.pub
+ssh-keygen -N "" -f client && cat client.pub
 <PUBKEY>
 ```
 
 Start admin shell in a different terminal
 ```bash
-./adminshell --id test --mongo_uri mongodb://root:root@localhost:27019 --mongo_db sshnoc 
+cd /opt/sshnoc/controller
+./adminshell --id adminshell --mongo_uri mongodb://root:root@localhost:27019 --mongo_db sshnoc 
 ```
 
 Run the folowing command with the public key above:
@@ -82,12 +83,12 @@ Run the the test client
 ssh -o UserKnownHostsFile=./ssh/known_hosts -R ./nodes/client/8000.sock:localhost:8000 -i ./ssh/client -p 2322 client@localhost
 ```
 
-You should see the following output:
+You should see similar lines as the following output:
 ```bash
 ...
-[test] Connection established at: 2021-09-21 11:00:16.911176+00:00
-[test] Your Client: client SSH-2.0-OpenSSH_7.9 chacha20-poly1305@openssh.com chacha20-poly1305@openssh.com
-[test] Press Ctrl+C to abort the connection...
+[controller] Connection established at: 2021-09-21 11:00:16.911176+00:00
+[controller] Your Client: client SSH-2.0-OpenSSH_7.9 chacha20-poly1305@openssh.com chacha20-poly1305@openssh.com
+[controller] Press Ctrl+C to abort the connection...
 ```
 
 Now your SSH client is successfully connected to the controller server and TCP port 8000 is reverse forwarded from the socket file above. Please mind that due to a simple implementation of the socket file forwarding it is mandatory to name socket files on the server as `./nodes/<Node Id>/<Port>.sock`
