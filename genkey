@@ -86,8 +86,8 @@ fi
 # }
 
 function prepare() {
-  if [ ! -d "${PWD}/ssh" ] ; then
-    mkdir "${PWD}/ssh"
+  if [ ! -d "${script_dir}/ssh" ] ; then
+    mkdir "${script_dir}/ssh"
   fi
 }
 
@@ -99,7 +99,7 @@ key="./${_id}_host_${_type}_key"
 createdAt=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 comment=""
 
-pushd "${PWD}/ssh" &> /dev/null
+pushd "${script_dir}/ssh" &> /dev/null
   if [ -r "$key" ] ; then
     die "Host key exists: ${key}. Delete first!"
   fi

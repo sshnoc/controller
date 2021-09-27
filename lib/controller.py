@@ -112,6 +112,8 @@ class Controller(Application):
                                   help="Controller ID (CONTROLLER_ID) Default: %s" % CONTROLLER_ID )
     self.arg_parser.add_argument('--dryrun', default = False, action='store_true', 
                                   help='Run a dryrun without starting SSH server' )
+    self.arg_parser.add_argument('--genkeys', default = False, action='store_true',
+                                  help='Generate SSH Server keys' )
 
     # TODO: pidfile
     # self.arg_parser.add_argument('--pid', default = False, action='store_true', 
@@ -222,23 +224,15 @@ class Controller(Application):
     self.config['http_admin_port'] = http_admin_port
     self.log( level = 'info', message = "Controller HTTP Admin Port: %s" % ( self.config['http_admin_port'] ) )
 
-    # Get External IP Address and GeoIP information
-    external_ip = None
-    geoip = None
-    try:
-      external_ip = detect_external_ip()
-      geoip = detect_geoip(external_ip)
-    except Exception as exc:
-      self.log( level = 'error', message = exc )
-      sys.exit(1)
-    self.config['external_ip'] = external_ip
-    self.config['geoip'] = geoip
-    self.config['country'] = 'Unknown'
-    if geoip:
-      self.config['country'] = geoip['country']
-    self.log( level = 'info', message = "Controller External Address: %s (%s)" % (external_ip, self.config['country']))
-
     # SSH specific initialization
+    if self.arguments.genkeys:
+      try:
+        self.init_ssh_keys()
+      except Exception as exc:
+        self.log( level = 'error', message = "(init) %s" % repr(exc) )
+      finally:
+        sys.exit(1)
+
     if self.config['controller_type'] == 'ssh':
       try:
         self.init_directories()
@@ -283,8 +277,25 @@ class Controller(Application):
 
     # Check for pid
     pid = os.getpid()
-
     self.log( level = 'info', message = "Controller Initialized PID = %s" % pid)
+
+    # Get External IP Address and GeoIP information
+    external_ip = None
+    geoip = None
+    try:
+      external_ip = detect_external_ip()
+      geoip = detect_geoip(external_ip)
+    except Exception as exc:
+      self.log( level = 'error', message = exc )
+      sys.exit(1)
+    self.config['external_ip'] = external_ip
+    self.config['geoip'] = geoip
+    self.config['country'] = 'Unknown'
+    if geoip:
+      self.config['country'] = geoip['country']
+
+    message = "SSH Server External Address: %s:%s (%s)" % ( self.config['external_ip'], self.config['ssh_port'], self.config['country'] )
+    self.log( level = 'info', message = message )
 
     if self.arguments.dryrun:
       sys.exit(0)
@@ -301,6 +312,32 @@ class Controller(Application):
       os.makedirs(nodes_dir)
   # def
 
+  def init_ssh_keys(self):
+    controller_id = self.config['id']
+    ssh_host_keys = {
+      'ssh-rsa': os.path.join( self.__dirname__, 'ssh', "%s_host_rsa_key" % controller_id ),
+      'ecdsa-sha2-nistp256': os.path.join( self.__dirname__, 'ssh', "%s_host_ecdsa_key" % controller_id ),
+      'ssh-ed25519': os.path.join( self.__dirname__, 'ssh', "%s_host_ed25519_key" % controller_id )
+    }
+    
+    for algo in ssh_host_keys:
+      key_path = ssh_host_keys[algo]
+      try:
+        asyncssh.read_private_key(key_path)
+        self.log( level = 'info', message = "SSH Key exists: %s" % key_path )
+      except FileNotFoundError as exc:
+        if( algo == 'ssh-rsa'):
+          key = asyncssh.generate_private_key(algo, comment="sshserver", key_size=2048)
+        else:
+          key = asyncssh.generate_private_key(algo, comment="sshserver")
+        key.write_private_key( key_path )
+        key.write_public_key( "%s.pub" % key_path )
+        self.log( level = 'info', message = "New SSH Generated: %s" % key_path )
+      # except: KeyGenerationError as exc:
+      except Exception as exc:
+        self.log( level = 'error', message = "(init_ssh_keys) %s" % repr(exc) )
+  # def
+
   def init_ssh_config(self):
     # Default forward ports
     self.config['ssh_local_forward_ports'] = LOCAL_FORWARD_PORTS
@@ -315,7 +352,6 @@ class Controller(Application):
 
     if self.arguments.ssh_port:
       ssh_port = self.arguments.ssh_port
-    
     self.config['ssh_port'] = ssh_port
 
     # SSH Server Host Keys
@@ -341,9 +377,6 @@ class Controller(Application):
       message = "SSH Server Host Key: %s (%s, %s)" % (key_path, fp, algo)
       self.log( level = 'info', message = message )
     # for
-
-    message = "SSH Server External Address: %s:%s" % ( self.config['external_ip'], self.config['ssh_port'] )
-    self.log( level = 'info', message = message )
   # def
 
   def init_mongo_config(self):
