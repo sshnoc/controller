@@ -5,14 +5,17 @@
 dname=$(dirname "$0")
 bname=$(basename "$0")
 
-is_docker="no"
-if [ -r /proc/1/cgroup ] ; then
-  if grep -q docker /proc/1/cgroup ; then 
-    is_docker="yes"
-  fi
-fi
+# is_docker="no"
+# if [ -r /proc/1/cgroup ] ; then
+#   if grep -q docker /proc/1/cgroup ; then 
+#     is_docker="yes"
+#   fi
+# fi
+# if [ "$is_docker" = "no" ] ; then
+#   source venv/bin/activate
+# fi
 
-if [ "$is_docker" = "no" ] ; then
+if [ -r ${dname}/venv/bin/activate ] ; then
   source venv/bin/activate
 fi
 

@@ -210,20 +210,6 @@ class Controller(Application):
     self.config['id'] = controller_id
     self.log( level = 'info', message = "Controller Id: %s (%s)" % (controller_id, controller_type))
 
-    # HTTP-based Admin port for online status or config
-    http_admin_port = HTTP_ADMIN_PORT
-    try:
-      http_admin_port = valid_port( os.environ['HTTP_ADMIN_PORT'] )
-    except:
-      pass
-    try:
-      if self.arguments.http_admin_port:
-        http_admin_port = self.arguments.http_admin_port
-    except:
-      pass
-    self.config['http_admin_port'] = http_admin_port
-    self.log( level = 'info', message = "Controller HTTP Admin Port: %s" % ( self.config['http_admin_port'] ) )
-
     # SSH specific initialization
     if self.arguments.genkeys:
       try:
@@ -246,6 +232,21 @@ class Controller(Application):
       except Exception as exc:
         self.log( level = 'error', message = "(init) %s" % repr(exc) )
         sys.exit(1)
+    # if
+
+    # HTTP-based Admin port for online status or config
+    http_admin_port = HTTP_ADMIN_PORT
+    try:
+      http_admin_port = valid_port( os.environ['HTTP_ADMIN_PORT'] )
+    except:
+      pass
+    try:
+      if self.arguments.http_admin_port:
+        http_admin_port = self.arguments.http_admin_port
+    except:
+      pass
+    self.config['http_admin_port'] = http_admin_port
+    self.log( level = 'info', message = "Controller HTTP Admin Port: %s" % ( self.config['http_admin_port'] ) )
 
     # Database initialization
     self.init_mongo_config()
