@@ -208,7 +208,12 @@ class Controller(Application):
     if self.arguments.id:
       controller_id = self.arguments.id
     self.config['id'] = controller_id
-    self.log( level = 'info', message = "Controller Id: %s (%s)" % (controller_id, controller_type))
+    self.log( level = 'info', message = "Id: %s (%s)" % (controller_id, controller_type))
+
+    # Check for pid
+    pid = os.getpid()
+    self.log( level = 'info', message = "PID = %s" % pid)
+    self.config['pid'] = pid
 
     # SSH specific initialization
     if self.arguments.genkeys:
@@ -232,21 +237,21 @@ class Controller(Application):
       except Exception as exc:
         self.log( level = 'error', message = "(init) %s" % repr(exc) )
         sys.exit(1)
-    # if
 
-    # HTTP-based Admin port for online status or config
-    http_admin_port = HTTP_ADMIN_PORT
-    try:
-      http_admin_port = valid_port( os.environ['HTTP_ADMIN_PORT'] )
-    except:
-      pass
-    try:
-      if self.arguments.http_admin_port:
-        http_admin_port = self.arguments.http_admin_port
-    except:
-      pass
-    self.config['http_admin_port'] = http_admin_port
-    self.log( level = 'info', message = "Controller HTTP Admin Port: %s" % ( self.config['http_admin_port'] ) )
+      # HTTP-based Admin port for online status or config
+      http_admin_port = HTTP_ADMIN_PORT
+      try:
+        http_admin_port = valid_port( os.environ['HTTP_ADMIN_PORT'] )
+      except:
+        pass
+      try:
+        if self.arguments.http_admin_port:
+          http_admin_port = self.arguments.http_admin_port
+      except:
+        pass
+      self.config['http_admin_port'] = http_admin_port
+      self.log( level = 'info', message = "HTTP Admin Port: %s" % ( self.config['http_admin_port'] ) )
+    # if
 
     # Database initialization
     self.init_mongo_config()
@@ -276,27 +281,24 @@ class Controller(Application):
         self.log( level = 'error', message = "(init) FATAL - %s" % ( exc ) )
         sys.exit(1)
 
-    # Check for pid
-    pid = os.getpid()
-    self.log( level = 'info', message = "Controller Initialized PID = %s" % pid)
-
     # Get External IP Address and GeoIP information
-    external_ip = None
-    geoip = None
-    try:
-      external_ip = detect_external_ip()
-      geoip = detect_geoip(external_ip)
-    except Exception as exc:
-      self.log( level = 'error', message = exc )
-      sys.exit(1)
-    self.config['external_ip'] = external_ip
-    self.config['geoip'] = geoip
-    self.config['country'] = 'Unknown'
-    if geoip:
-      self.config['country'] = geoip['country']
+    if self.config['controller_type'] == 'ssh':
+      external_ip = None
+      geoip = None
+      try:
+        external_ip = detect_external_ip()
+        geoip = detect_geoip(external_ip)
+      except Exception as exc:
+        self.log( level = 'error', message = exc )
+        sys.exit(1)
+      self.config['external_ip'] = external_ip
+      self.config['geoip'] = geoip
+      self.config['country'] = 'Unknown'
+      if geoip:
+        self.config['country'] = geoip['country']
 
-    message = "SSH Server External Address: %s:%s (%s)" % ( self.config['external_ip'], self.config['ssh_port'], self.config['country'] )
-    self.log( level = 'info', message = message )
+      message = "SSH Server External Address: %s:%s (%s)" % ( self.config['external_ip'], self.config['ssh_port'], self.config['country'] )
+      self.log( level = 'info', message = message )
 
     if self.arguments.dryrun:
       sys.exit(0)
@@ -421,7 +423,7 @@ class Controller(Application):
     mongo_db = self.config['mongo_db']
     mongo_uri_masked = "%s/%s" % ( re.sub(r'\/.*@', '//***@', mongo_uri), self.config['mongo_db'])
     self.config['mongo_uri_masked'] = mongo_uri_masked
-    self.log( level = 'info', message = "Connecting Database: %s" % mongo_uri_masked )
+    self.log( level = 'debug', message = "Connecting Database (%s)" % mongo_uri_masked )
     self.mongo_client = None
     # TODO: SSL params from cli
 
@@ -440,7 +442,7 @@ class Controller(Application):
     try:
       # The ismaster command is cheap and does not require auth.
       db_status = self.mongo_client.admin.command( 'ismaster' )
-      self.log( level = 'info', message = "Database Connected" )
+      self.log( level = 'info', message = "Database Connected (%s)" % mongo_uri_masked )
     except ConnectionFailure as exc:
       self.log( level = 'error', message = "FATAL - Database connection failed: %s - %s" % ( mongo_db, exc ) )
       if self.config['controller_type'] == "shell":
