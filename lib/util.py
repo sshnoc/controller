@@ -37,13 +37,16 @@ def using():
 # https://stackoverflow.com/questions/4770297/convert-utc-datetime-string-to-local-datetime
 def utc2local(time = None, to_zone = tz.tzlocal() ):
   from_zone = tz.gettz('UTC')
-  # to_zone = tz.gettz('America/New_York')
-  utc = time # datetime.strptime(time, '%Y-%m-%d %H:%M:%S')
-  # Tell the datetime object that it's in UTC time zone since 
-  # datetime objects are 'naive' by default
-  utc = utc.replace(tzinfo=from_zone)
-  # Convert time zone
-  return utc.astimezone(to_zone)
+  try:
+    # to_zone = tz.gettz('America/New_York')
+    utc = time # datetime.strptime(time, '%Y-%m-%d %H:%M:%S')
+    # Tell the datetime object that it's in UTC time zone since 
+    # datetime objects are 'naive' by default
+    utc = utc.replace(tzinfo=from_zone)
+    # Convert time zone
+    return utc.astimezone(to_zone)
+  except:
+    return ''
 # def
 
 
@@ -85,6 +88,13 @@ def detect_geoip( ip = None ):
 ## Validators
 def valid_id(astring = None):
   schema = {'id': {'type': 'string', 'maxlength': 32, 'minlength': 1, 'regex': r"^[a-zA-Z0-9]*$" }}
+  v = cerberus.Validator()
+  if v.validate( {'id': astring}, schema ):
+    return astring
+  raise Exception("Ivalid node id string")
+
+def valid_secret(astring = None):
+  schema = {'id': {'type': 'string', 'maxlength': 128, 'minlength': 8, 'regex': r"^[_+!%\/=()a-zA-Z0-9]*$" }}
   v = cerberus.Validator()
   if v.validate( {'id': astring}, schema ):
     return astring

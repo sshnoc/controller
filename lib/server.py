@@ -23,6 +23,8 @@ from .ssh import ControllerSSHServer
 LOGIN_TIMEOUT = '30s'
 KEEPALIVE = '30s'
 
+RESERVED_PORT_RANGE = [40000, 50000]
+
 
 # CONTROLLER SERVER
 class ControllerServer(Controller):
@@ -60,7 +62,7 @@ class ControllerServer(Controller):
     col = self.db_col('ports')
     col.create_index( [ ("id", 1), ("node_id", 1)] )
     bulk_update = []
-    for i in range(10001,11025):
+    for i in range(RESERVED_PORT_RANGE[0], RESERVED_PORT_RANGE[1]):
       update = { '$set': { 'id': i, 'node_id': None } }
       bulk_update.append( UpdateOne({ 'id': i }, update, upsert=True ) )
     # for

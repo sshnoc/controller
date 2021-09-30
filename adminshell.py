@@ -1,5 +1,7 @@
 import os
 import sys
+from click.core import _complete_visible_commands
+# https://click.palletsprojects.com/en/8.0.x/complex/
 from click_shell import shell
 import click
 
@@ -37,6 +39,7 @@ Interactive SSHNOC Server Shell
 Type help for available commands
 """
 
+PROMPT = "SSHNOC ADMIN"
 
 def servershell():
   cli = ControllerWithAPI( __file__ )
@@ -52,125 +55,140 @@ def servershell():
 
   hist_file = os.path.join(cli.__absdir__, '.click-history')
 
-  @shell(prompt="SSHNOC ADMIN [%s]> " % cli.config['mongo_uri_masked'], hist_file = hist_file )
-  def servercli():
+  @shell(prompt="%s [%s]> " % ( PROMPT, cli.config['mongo_uri_masked'] ), hist_file = hist_file )
+  def clishell():
     pass
 
+ ######   #######  ##     ## ##     ##    ###    ##    ## ########   ######  
+##    ## ##     ## ###   ### ###   ###   ## ##   ###   ## ##     ## ##    ## 
+##       ##     ## #### #### #### ####  ##   ##  ####  ## ##     ## ##       
+##       ##     ## ## ### ## ## ### ## ##     ## ## ## ## ##     ##  ######  
+##       ##     ## ##     ## ##     ## ######### ##  #### ##     ##       ## 
+##    ## ##     ## ##     ## ##     ## ##     ## ##   ### ##     ## ##    ## 
+ ######   #######  ##     ## ##     ## ##     ## ##    ## ########   ######  
 
-  ## GENERAL
-  @servercli.command()
+  @clishell.command()
   def restart():
-    print("Restarting Server CLI ...")
+    print("Restarting CLI ...")
     os.execv( sys.executable, ['python'] + _saved_argv )
   # def
 
+  # TODO: --json --table --csv
+  # show
+  @clishell.group()
+  def show():
+    pass
 
-  ## JWT
-  @servercli.command()
-  @click.option('--secret', help = 'JWT Secret' )
-  @click.option('--payload', help = 'Payload Data')
-  def encode_jwt( secret = None, payload = None):
-    encoded_jwt = jwt.encode( json.loads(payload), secret, algorithm="HS256")
-    click.echo( 'Encoded payload:' )
-    click.echo( encoded_jwt )
+  # show nodes
+  @show.command( help = "Show node list")
+  @click.argument('status', default='all')
+  def nodes(tags = None, type = None, status = None, sortby = "id"):
+    if not status in ['all', 'online', 'offline']:
+      raise Exception("Unknown status: %s" % status )
+    cli.api_nodes(tags = tags, type = type, status = status, sortby = sortby )
+  # def
 
+  # TODO: show node ID
+  @show.command( help = "Show node details")
+  @click.argument('id')
+  def node(id = None):
+    cli.api_node( id = id )
 
-  ## CONTROLLERS
-  @servercli.command()
-  @click.option('--type', help = 'Filter option for type' )
-  @click.option('--status', help = 'Filter option for status')
+  # show controllers
+  @show.command(help = "Show controller list")
+  @click.argument('status', default='all')
   def controllers(type = None, status = None):
+    if not status in ['all', 'online', 'offline']:
+      raise Exception("Unknown status: %s" % status )
     cli.api_controllers(type = type, status = status)
   # def
 
-  @servercli.command()
-  @click.option('--id', default="test", required=True, help = 'Controller Id')
+  # TODO: show controller ID
+  @show.command(help = "Show controller details")
+  @click.argument('id')
   def controller( id = None):
     cli.api_controller( id = id )
   # def
 
-  ## USERS
-  @servercli.command()
+  @show.command(help = "Show user list")
   def users():
     cli.api_users()
   # def
 
-
-  ## NODES
-  @servercli.command()
-  @click.option('--tags')
-  @click.option('--type', help = 'Filter option for type' )
-  @click.option('--status', help = 'Filter option for status')
-  @click.option('--sortby', help = 'Filter option for sort')
-  def nodes(tags = None, type = 'ssh', status = None, sortby = "id"):
-    cli.api_nodes(tags = tags, type = type, status = status, sortby = sortby )
+  @show.command(help = "Show events")
+  @click.option('--limit', help = 'Limit the number of lines', default=50)
+  @click.option('--node', help = 'Filter option for status', default='all')
+  @click.option('--controller', help = 'Filter option for status', default='all')
+  def events(limit = None, node = None, controller = None):
+    cli.api_events(limit, node, controller)
   # def
 
-  @servercli.command()
-  @click.option('--id', default="test", required=True, help = 'Node Id' )
-  def node(id = None):
-    cli.api_node( id = id )
-  # def
+  # node commands
+  @clishell.group()
+  def node():
+    pass
 
-  @servercli.command()
-  @click.option('--tags')
-  def online(tags = None ):
-    cli.api_nodes(tags = tags, type = 'ssh', status = 'online' )
-  # def
-
-
-  @servercli.command()
-  @click.option('--id', default="test", required=True, help = 'Node Id' )
+  @node.command( help = "Add a new node or update")
+  @click.argument('type', default='ssh')
+  @click.option('--id', required=True)
   @click.option('--pubkey', required=True)
   @click.option('--force', is_flag=True, default=False)
   @click.option('--desc')
-  def add_ssh_node(id, pubkey, force, desc):
-    cli.api_add_ssh_node(id = id, pubkey = pubkey, force = force, desc = desc )
-  # def
-
-  @servercli.command()
-  @click.option('--id', default="test", required=True )
-  @click.option('--pubkey', required=True)
-  @click.option('--force', is_flag=True, default=False)
-  @click.option('--desc')
-  @click.option('--type', default="ssh", required=True )
-  def add_node(id, pubkey, force, desc, type ):
+  def add(type = None, id = None, pubkey = None, force = False, desc = None ):
     cli.api_add_node(id = id, pubkey = pubkey, force = force, desc = desc, type = type )
-  # def
 
-  @servercli.command()
-  @click.option('--data', required=True, default="nodes.json")
-  def export_nodes(data):
-    cli.api_export_nodes(output=data)
-  # def
+  @node.command( help = "Delete a node")
+  @click.argument('id')
+  @click.option('--yesiwant2delete', required=True, is_flag=True, default=False)
+  def delete(id = None, yesiwant2delete = None ):
+    if( yesiwant2delete ):
+      cli.api_delete_node(id = id)
+    else:
+      print("Use --yesiwant2delete flag in order to acknowledge node delete")
 
-  @servercli.command()
-  @click.option('--data', required=True, default="nodes.json")
-  def import_nodes(data):
-    cli.api_import_nodes(input=data)
-  # def
+# TODO: description and tagging
+#
+#  @clishell.command()
+#  @click.option('--id', required=True, help = "Node Id" )
+#  @click.option('--desc', required=True, help = "Description" )
+#  def node_description(id,desc):
+#    cli.api_node_description(id=id,desc=desc)
+#  # def
 
-  @servercli.command()
-  @click.option('--id', required=True, help = "Node Id" )
-  @click.option('--service', required=True, help = "Service short name eg. ssh, http ..." )
-  def allocate_port(id,service):
-    cli.api_allocate_port(id=id,service=service)
-  # def
 
-  @servercli.command()
-  @click.option('--id', required=True, help = "Node Id" )
-  @click.option('--desc', required=True, help = "Description" )
-  def node_description(id,desc):
-    cli.api_node_description(id=id,desc=desc)
-  # def
+  # @node.command( help = "Enable node")
+  # @click.argument('id')
+  # def enable(id = None):
+  #   print(id)
+  # @node.command( help = "Disable node")
+  # @click.argument('id')
+  # def disable(id = None):
+  #   print(id)
 
-  @servercli.command()
-  def test():
-    cli.api_test()
+  # TODO: port alloc / dealloc
+#  @clishell.command()
+#  @click.option('--id', required=True, help = "Node Id" )
+#  @click.option('--service', required=True, help = "Service short name eg. ssh, http ..." )
+#  def allocate_port(id,service):
+#    cli.api_allocate_port(id=id,service=service)
+#  # def
+
+  # TODO: status, syscheck, export import
+#  @clishell.command()
+#  @click.option('--data', required=True, default="nodes.json")
+#  def export_nodes(data):
+#    cli.api_export_nodes(output=data)
+#  # def
+#
+#  @clishell.command()
+#  @click.option('--data', required=True, default="nodes.json")
+#  def import_nodes(data):
+#    cli.api_import_nodes(input=data)
+#  # def
 
 
   ## MAIN
-  servercli()
+  clishell()
 
 if __name__ == '__main__':
   servershell()

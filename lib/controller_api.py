@@ -2,7 +2,9 @@ import json
 import asyncssh
 
 from .controller import Controller
-from .util import get_utc_time, utc2local
+from .util import get_utc_time
+from .util import utc2local
+from .util import valid_id
 
 # https://robpol86.github.io/terminaltables/
 from terminaltables import AsciiTable
@@ -13,6 +15,8 @@ import chevron
 # https://pymongo.readthedocs.io/en/stable/examples/bulk.html
 from pymongo import UpdateOne, ASCENDING, DESCENDING
 
+import pprint
+pp = pprint.PrettyPrinter(indent=4)
 
 ######## ######## ##     ## ########  ##          ###    ######## ########  ######  
    ##    ##       ###   ### ##     ## ##         ## ##      ##    ##       ##    ## 
@@ -47,14 +51,48 @@ MUS_SHOW_NODE = """
 
 
 class ControllerWithAPI(Controller):
+
+  def api_events( self, limit = 30, node = None, controller = None ):
+    """
+    List events
+    """
+    t = get_utc_time()
+    query = {}
+
+    if node != 'all':
+      query['node_id'] = node
+    if controller != 'all':
+      query['controller_id'] = controller
+
+    try:
+      col = self.db_col('events')
+      cur = col.find( query, projection={"_id": False} ).sort( "createdAt", -1 ).limit(limit)
+    except Exception as exc:
+      self.log( level = 'error', message = "Database error: %s" % exc)
+      return
+
+    table = []
+    table.append([ "Severity", "Created (UTC)", "Controller", "Node", "Message"] )
+    for c in cur:
+      row = [
+        c['level'], c['createdAt'], c['controller_id'], c['node_id'], c['message']
+      ]
+      table.append( row )
+    print( AsciiTable(table).table ) 
+  # def
+
   def api_controllers( self, type = None, status = None ):
+    """
+    List controllers
+    """
+
     t = get_utc_time()
     count = {'total': 0, 'online': 0, 'offline': 0}
     cur = None
     query = {}
     if type:
       query['type'] = type
-    if status:
+    if status != 'all':
       query['status'] = status
     try:
       col = self.db_col('controllers')
@@ -69,7 +107,25 @@ class ControllerWithAPI(Controller):
     table = []
     table.append([ "Status", "Id", "Type", "Ext. Address", "Port", "Country", "Timezone"] )
     for c in cur:
-      row = [ c["status"], c["id"], c["controller_type"], c["external_ip"], c["ssh_port"] ]
+      controller_type = 'unknown'
+      try:
+        controller_type = c["controller_type"]
+      except:
+        pass
+
+      external_ip = '-'
+      try:
+        external_ip = c["external_ip"]
+      except:
+        pass
+
+      ssh_port = '-'
+      try:
+        ssh_port = c["ssh_port"]
+      except:
+        pass
+
+      row = [ c["status"], c["id"], controller_type, external_ip, ssh_port ]
       try:
         country = c["geoip"]["country"]
         timezone = c["geoip"]["timezone"]
@@ -84,29 +140,49 @@ class ControllerWithAPI(Controller):
   # TODO
   def api_controller( self, id = None ):
     t = get_utc_time()
-    query = { 'id': id }
+    query = { 'id': valid_id(id) }
     try:
       col = self.db_col('controllers')
       cur = col.find_one( query, projection={"_id": False})
       country = 'Unknown'
-      timezoone = 'Unknown'
+      timezone = 'Unknown'
       try:
         country = cur["geoip"]["country"]
         timezone = cur["geoip"]["timezone"]
       except:
         pass
 
-      data = { 'country': country, 'timezone': timezone, 
-              'id': cur['id'], 'external_ip': cur['external_ip'],
-              'ssh_port': cur["ssh_port"], 'status': cur['status'] }
-      args = { 'template': MUS_SHOW_CONTROLLER, 'data': data }
+      external_ip = ''
+      try:
+        external_ip = cur['external_ip']
+      except:
+        pass
+
+      ssh_port = ''
+      try:
+        ssh_port = cur['ssh_port']
+      except:
+        pass
+
+      data = {
+        'country': country,
+        'timezone': timezone, 
+        'id': cur['id'],
+        'external_ip': external_ip,
+        'ssh_port': ssh_port,
+        'status': cur['status']
+      }
+      args = {
+        'template': MUS_SHOW_CONTROLLER,
+        'data': data
+      }
       print( chevron.render(**args) )
     except Exception as exc:
       self.log( level = 'error', message = "Database error: %s" % exc )
       return
   # def
 
-  def api_users(self ):
+  def api_users(self):
     t = get_utc_time()
     count = {'total': 0}
     cur = None
@@ -160,7 +236,7 @@ class ControllerWithAPI(Controller):
       query = {"tags" : { "$in" : tags_array } }
     if type:
       query["node_type"] = { "$eq": type }
-    if status:
+    if status != 'all':
       query["status"] = { "$eq": status }
 
     try:
@@ -184,12 +260,12 @@ class ControllerWithAPI(Controller):
     table_header = [ 
       "Status", "Controller", "Node", 
       "Description", "SSH Key Algo", "SSH Client Version", 
-      "Last Update"] 
+      "Last Update (UTC)"] 
     table = []
     table.append( table_header )
     for c in cur:
-      status = "down"
-      if c["status"] == "online": status = "up"
+      status = "offline"
+      if c["status"] == "online": status = "online"
 
       cid = 'unknown'
       try:
@@ -221,7 +297,7 @@ class ControllerWithAPI(Controller):
 
   def api_node(self, id = None):
     t = get_utc_time()
-    query = { 'id': id }
+    query = { 'id': valid_id(id) }
     try:
       col = self.db_col('nodes')
       node = col.find_one( query, projection={"_id": False})
@@ -229,25 +305,61 @@ class ControllerWithAPI(Controller):
       data = {
         'id': node['id'],
         'status': node['status'],
+        'updatedAt': utc2local(time=node['updatedAt']),
+        'connectedAt':  utc2local(time=node['connectedAt']),
+        # 'disconnectedAt': utc2local(time= node['disconnectedAt']),
+        'createdAt':  utc2local(time=node['createdAt']),
+        # extra_info 
+        'external_ip': '-',
+        'country': '-',
+        'continent': '-',
+        'timezone': '-',
+        'client_version': '-',
+        'send_cipher': '-',
+        'recv_cipher': '-',
+        'send_mac': '-',
+        'recv_mac': '-',
+        'description': '-',
+        'product': '-',
+        'serial': '-'
+      }
+
+      extra_info = {}
+      try:
+        node['extra_info']
+        extra_info = {
         'external_ip': node['extra_info']['peername'],
         'country': node['extra_info']['geoip']['country'],
         'continent': node['extra_info']['geoip']['continent'],
         'timezone': node['extra_info']['geoip']['timezone'],
-        'updatedAt': utc2local(time=node['updatedAt']),
-        'connectedAt':  utc2local(time=node['connectedAt']),
-        'disconnectedAt': utc2local(time= node['disconnectedAt']),
-        'createdAt':  utc2local(time=node['createdAt']),
         'client_version': node['extra_info']['client_version'],
         'send_cipher':node['extra_info']['send_cipher'],
         'recv_cipher':node['extra_info']['recv_cipher'],
         'send_mac':node['extra_info']['send_mac'],
         'recv_mac':node['extra_info']['recv_mac']
-  # System Description: {{ description }}
-  #     System Product: {{ product }}
-  #      System Serial: {{ serial }}
-      }
+        }
+        data = {**data, **extra_info}
+      except:
+        pass
       args = { 'template': MUS_SHOW_NODE, 'data': data }
       print( chevron.render(**args) )
+    except Exception as exc:
+      raise exc
+      self.log( level = 'error', message = "%s" % repr(exc) )
+      return
+  # def
+
+  def api_delete_node(self, id = None ):
+    t = get_utc_time()
+
+    query = {'id': id}
+    try:
+      col = self.db_col('nodes')
+      res = col.delete_one( query )
+
+      if res.deleted_count:
+        print("Node deleted")
+
     except Exception as exc:
       self.log( level = 'error', message = "Database error: %s" % exc )
       return
@@ -267,7 +379,7 @@ class ControllerWithAPI(Controller):
       return
 
     node = None
-    query = { 'id': id }
+    query = { 'id': valid_id(id) }
     try:
       col = self.db_col('nodes')
       node = col.find_one( query, projection={"_id": False}  )
@@ -303,7 +415,15 @@ class ControllerWithAPI(Controller):
 
     try:
       res = col.update_one( query, { '$set': update }, upsert=True )
-      print("Node created")
+      # pp.pprint(dir(res))
+      # print("Matched / Modified = %s / %s" % (res.matched_count, res.modified_count ) )
+      # print(res.raw_result)
+      # print("Node created")
+
+      if res.modified_count:
+        print("Node Updated")
+      else:
+        print("Node created")
     except Exception as exc:
       self.log( level = 'error', message = "Database error: %s" % exc )
       return
@@ -384,7 +504,7 @@ class ControllerWithAPI(Controller):
 
   def api_node_description(self, id = None, desc = 'Description' ):
     t = get_utc_time()
-    query = {'id': id}
+    query = {'id': valid_id(id)}
     node = None
     try:
       update = {

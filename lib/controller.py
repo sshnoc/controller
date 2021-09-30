@@ -31,7 +31,7 @@ from .util import get_utc_time
 from .util import detect_external_ip
 from .util import detect_geoip
 from .util import using
-from .util import valid_id, valid_port
+from .util import valid_id, valid_port, valid_secret
 # from .crypto import Crypto
 
 ## Default values
@@ -39,6 +39,7 @@ VERSION = '0.0.1'
 # DB_VERSION = '0.0.1'
 CONTROLLER_ID = 'controller'
 CONTROLLER_TYPE = 'ssh'
+SECRET='change_this_secret'
 
 # Local REST Admin Interface
 HTTP_ADMIN_PORT = 2120
@@ -112,14 +113,10 @@ class Controller(Application):
                                   help="Controller ID (CONTROLLER_ID) Default: %s" % CONTROLLER_ID )
     self.arg_parser.add_argument('--dryrun', default = False, action='store_true', 
                                   help='Run a dryrun without starting SSH server' )
-    self.arg_parser.add_argument('--genkeys', default = False, action='store_true',
-                                  help='Generate SSH Server keys' )
-
-    # TODO: pidfile
-    # self.arg_parser.add_argument('--pid', default = False, action='store_true', 
-    #                               help='Use pid file' )
     self.arg_parser.add_argument('--forcestart', default=False, action='store_true',
                                   help='Force start the server without checking online status' )
+    # self.arg_parser.add_argument('--pid', default = False, action='store_true', 
+    #                               help='Use pid file' )
 
     # Database
     self.arg_parser.add_argument('--mongo_uri',help="MongoDB URI (MONGO_URI) Default: %s" % MONGO_URI )
@@ -128,8 +125,11 @@ class Controller(Application):
     self.arg_parser.add_argument('--init_rs', help='Initialize Replica Set', default=False, action='store_true' )
 
     # SSH Server
+    self.arg_parser.add_argument('--genkeys', default = False, action='store_true',
+                                  help='Generate SSH Server keys' )
     self.arg_parser.add_argument('--ssh_port',help="SSH Server Port (SSH_PORT) Default: %s" % SSH_PORT, type=valid_port )
-    self.arg_parser.add_argument('--http_admin_port',help="HTTP Admin Port (HTTP_ADMIN_PORT) Default: %s" % HTTP_ADMIN_PORT, type=valid_port )
+    self.arg_parser.add_argument('--http_admin_port', type=valid_port, 
+                                  help="HTTP Admin Port (HTTP_ADMIN_PORT) Default: %s" % HTTP_ADMIN_PORT )
   # def
 
 
@@ -210,7 +210,15 @@ class Controller(Application):
     self.config['id'] = controller_id
     self.log( level = 'info', message = "Id: %s (%s)" % (controller_id, controller_type))
 
-    # Check for pid
+    secret = SECRET
+    try:
+      secret = valid_secret( os.environ['SECRET'] )
+    except:
+      if secret == SECRET:
+        self.log( level = 'warning', message = "Change default SECRET in .env file!" )
+      # if
+    self.config['secret'] = secret
+
     pid = os.getpid()
     self.log( level = 'info', message = "PID = %s" % pid)
     self.config['pid'] = pid
@@ -272,14 +280,15 @@ class Controller(Application):
 
     # Check Controller Status
     if not self.arguments.forcestart:
-      try:
-        status = self.db_controller_status()
-        if status == 'online':
-          self.log( level = 'error', message = "FATAL - Controller with the same Id already started" )
+      if self.config['controller_type'] != 'shell':
+        try:
+          status = self.db_controller_status()
+          if status == 'online':
+            self.log( level = 'error', message = "FATAL - Controller with the same Id already started" )
+            sys.exit(1)
+        except Exception as exc:
+          self.log( level = 'error', message = "(init) FATAL - %s" % ( exc ) )
           sys.exit(1)
-      except Exception as exc:
-        self.log( level = 'error', message = "(init) FATAL - %s" % ( exc ) )
-        sys.exit(1)
 
     # Get External IP Address and GeoIP information
     if self.config['controller_type'] == 'ssh':

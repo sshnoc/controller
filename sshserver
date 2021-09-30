@@ -2,20 +2,11 @@
 
 # DOTENV=.env.local python sshserver.py
 
-dname=$(dirname "$0")
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd -P)
 bname=$(basename "$0")
 
-# is_docker="no"
-# if [ -r /proc/1/cgroup ] ; then
-#   if grep -q docker /proc/1/cgroup ; then 
-#     is_docker="yes"
-#   fi
-# fi
-# if [ "$is_docker" = "no" ] ; then
-#   source venv/bin/activate
-# fi
 
-if [ -r ${dname}/venv/bin/activate ] ; then
+if [ -r ${script_dir}/venv/bin/activate ] ; then
   source venv/bin/activate
 fi
 
