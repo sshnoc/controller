@@ -22,6 +22,7 @@ from pprint import PrettyPrinter
 pprint = PrettyPrinter(indent=4).pprint
 
 from lib.controller_api import ControllerWithAPI #, MONGO_URI, MONGO_DB
+from lib.util import valid_id, valid_port, valid_secret
 # from lib.util import get_utc_time
 
 
@@ -43,7 +44,9 @@ PROMPT = "SSHNOC ADMIN"
 
 def servershell():
   cli = ControllerWithAPI( __file__ )
-  cli.init( controller_type = 'shell' )
+  pid = os.getpid()
+
+  cli.init( controller_type = 'shell', id = "adminshell-%s" % pid )
 
   _saved_argv = sys.argv
   sys.argv = [sys.argv[0]]
@@ -53,7 +56,7 @@ def servershell():
   if cli.arguments.debug:
     print("Debug is ON\n")
 
-  hist_file = os.path.join(cli.__absdir__, '.click-history')
+  hist_file = os.path.join(cli.__absdir__, '.adminshell.history')
 
   @shell(prompt="%s [%s]> " % ( PROMPT, cli.config['mongo_uri_masked'] ), hist_file = hist_file )
   def clishell():
@@ -79,48 +82,45 @@ def servershell():
   def show():
     pass
 
-  # show nodes
-  @show.command( help = "Show node list")
-  @click.argument('status', default='all')
-  def nodes(tags = None, type = None, status = None, sortby = "id"):
-    if not status in ['all', 'online', 'offline']:
-      raise Exception("Unknown status: %s" % status )
-    cli.api_nodes(tags = tags, type = type, status = status, sortby = sortby )
+  # show events
+  @show.command(help = "Show latest controller events saved to the database")
+  @click.option('--limit', help = 'Limit the number of lines (default = 50)', default=50)
+  @click.option('--node', help = 'Filter for Node Id (default = all)', default='all')
+  @click.option('--controller', help = 'Filter for Controller Id (default = all)', default='all')
+  def events(limit = None, node = None, controller = None):
+    cli.api_show_events(limit = limit, node_id = node, controller_id = controller)
   # def
-
-  # TODO: show node ID
-  @show.command( help = "Show node details")
-  @click.argument('id')
-  def node(id = None):
-    cli.api_node( id = id )
 
   # show controllers
   @show.command(help = "Show controller list")
   @click.argument('status', default='all')
   def controllers(type = None, status = None):
-    if not status in ['all', 'online', 'offline']:
-      raise Exception("Unknown status: %s" % status )
-    cli.api_controllers(type = type, status = status)
+    cli.api_show_controllers(type = type, status = status)
   # def
 
-  # TODO: show controller ID
+  # show nodes
+  @show.command( help = "Show node list")
+  @click.argument('status', default='all')
+  def nodes(status = None):
+    cli.api_show_nodes(status = status )
+  # def
+
+  # show node ID
+  @show.command( help = "Show node details")
+  @click.argument('id')
+  def node(id = None):
+    cli.api_show_node( id = id )
+
+  # show controller ID
   @show.command(help = "Show controller details")
   @click.argument('id')
   def controller( id = None):
-    cli.api_controller( id = id )
+    cli.api_show_controller( id = id )
   # def
 
   @show.command(help = "Show user list")
   def users():
-    cli.api_users()
-  # def
-
-  @show.command(help = "Show events")
-  @click.option('--limit', help = 'Limit the number of lines', default=50)
-  @click.option('--node', help = 'Filter option for status', default='all')
-  @click.option('--controller', help = 'Filter option for status', default='all')
-  def events(limit = None, node = None, controller = None):
-    cli.api_events(limit, node, controller)
+    cli.api_show_users()
   # def
 
   # node commands
@@ -128,6 +128,7 @@ def servershell():
   def node():
     pass
 
+  # node add ...
   @node.command( help = "Add a new node or update")
   @click.argument('type', default='ssh')
   @click.option('--id', required=True)
@@ -135,16 +136,43 @@ def servershell():
   @click.option('--force', is_flag=True, default=False)
   @click.option('--desc')
   def add(type = None, id = None, pubkey = None, force = False, desc = None ):
-    cli.api_add_node(id = id, pubkey = pubkey, force = force, desc = desc, type = type )
+    cli.api_node_add(id = id, pubkey = pubkey, force = force, desc = desc, type = type )
 
+  # node delete ID
   @node.command( help = "Delete a node")
   @click.argument('id')
   @click.option('--yesiwant2delete', required=True, is_flag=True, default=False)
   def delete(id = None, yesiwant2delete = None ):
     if( yesiwant2delete ):
-      cli.api_delete_node(id = id)
+      cli.api_node_delete(id = id)
     else:
       print("Use --yesiwant2delete flag in order to acknowledge node delete")
+
+  # node enable ID
+  @node.command( help = "Enable a node")
+  @click.argument('id')
+  def enable(id = None):
+    cli.api_node_enable(id = id)
+
+  # node disable ID
+  @node.command( help = "Disable a node")
+  @click.argument('id')
+  def disable(id = None):
+    cli.api_node_disable(id = id)
+
+
+  # port commands
+  @clishell.group()
+  def port():
+    pass
+
+  # port alloc / dealloc
+  @port.command()
+  @click.option('--id', required=True, help = "Node Id" )
+  @click.option('--service', required=True, help = "Service short name eg. ssh, http ..." )
+  def alloc(id,service):
+    cli.api_port_alloc(id=id,service=service)
+  # def
 
 # TODO: description and tagging
 #

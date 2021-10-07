@@ -189,7 +189,7 @@ class Controller(Application):
  ##  ##   ###  ##     ##    
 #### ##    ## ####    ##    
 
-  def init( self, controller_type = 'ssh' ):
+  def init( self, controller_type = 'ssh', id = None ):
     """
     Initialize controller object configuration from cli arguments or the environment
 
@@ -207,6 +207,9 @@ class Controller(Application):
       pass
     if self.arguments.id:
       controller_id = self.arguments.id
+    # Final override
+    if id:
+      controller_id = id
     self.config['id'] = controller_id
     self.log( level = 'info', message = "Id: %s (%s)" % (controller_id, controller_type))
 
@@ -271,12 +274,11 @@ class Controller(Application):
       init_db = self.arguments.init_db
     except:
       pass
-    if init_db:
-      self.connect_mongo()
-      self.init_db()
-      sys.exit(0)
-    
+
     self.connect_mongo()
+    self.init_db()
+    if init_db:
+      sys.exit(0)
 
     # Check Controller Status
     if not self.arguments.forcestart:
@@ -386,7 +388,7 @@ class Controller(Application):
         'pubkey_str': pubkey_str,
         'fp': fp
       }
-      message = "SSH Server Host Key: %s (%s, %s)" % (key_path, fp, algo)
+      message = "Loading Host Key: %s (%s) %s" % (os.path.basename(key_path), fp, algo )
       self.log( level = 'info', message = message )
     # for
   # def

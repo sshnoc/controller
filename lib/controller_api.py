@@ -52,17 +52,24 @@ MUS_SHOW_NODE = """
 
 class ControllerWithAPI(Controller):
 
-  def api_events( self, limit = 30, node = None, controller = None ):
+  # show events
+  def api_show_events( self, limit = 30, node_id = None, controller_id = None ):
     """
     List events
     """
+
+    if(limit > 500 or limit < 1):
+      raise Exception("Limit is between 1 to 500")
+    valid_id(node_id)
+    valid_id(controller_id)
+
     t = get_utc_time()
     query = {}
 
-    if node != 'all':
-      query['node_id'] = node
-    if controller != 'all':
-      query['controller_id'] = controller
+    if node_id != 'all':
+      query['node_id'] = node_id
+    if controller_id != 'all':
+      query['controller_id'] = controller_id
 
     try:
       col = self.db_col('events')
@@ -81,10 +88,14 @@ class ControllerWithAPI(Controller):
     print( AsciiTable(table).table ) 
   # def
 
-  def api_controllers( self, type = None, status = None ):
+  # show controllers
+  def api_show_controllers( self, type = None, status = None ):
     """
     List controllers
     """
+
+    if not status in ['all', 'online', 'offline']:
+      raise Exception("Unknown status: %s" % status )
 
     t = get_utc_time()
     count = {'total': 0, 'online': 0, 'offline': 0}
@@ -107,6 +118,9 @@ class ControllerWithAPI(Controller):
     table = []
     table.append([ "Status", "Id", "Type", "Ext. Address", "Port", "Country", "Timezone"] )
     for c in cur:
+      status = "DOWN"
+      if c["status"] == "online": status = "UP"
+
       controller_type = 'unknown'
       try:
         controller_type = c["controller_type"]
@@ -125,7 +139,7 @@ class ControllerWithAPI(Controller):
       except:
         pass
 
-      row = [ c["status"], c["id"], controller_type, external_ip, ssh_port ]
+      row = [ status, c["id"], controller_type, external_ip, ssh_port ]
       try:
         country = c["geoip"]["country"]
         timezone = c["geoip"]["timezone"]
@@ -138,7 +152,7 @@ class ControllerWithAPI(Controller):
   # def
 
   # TODO
-  def api_controller( self, id = None ):
+  def api_show_controller( self, id = None ):
     t = get_utc_time()
     query = { 'id': valid_id(id) }
     try:
@@ -182,7 +196,7 @@ class ControllerWithAPI(Controller):
       return
   # def
 
-  def api_users(self):
+  def api_show_users(self):
     t = get_utc_time()
     count = {'total': 0}
     cur = None
@@ -224,12 +238,19 @@ class ControllerWithAPI(Controller):
 ##   ### ##     ## ##     ## ##       ##    ## 
 ##    ##  #######  ########  ########  ######  
 
-  def api_nodes(self, tags = None, type = None, status = None, sortby = "id" ):
+  def api_show_nodes(self, status = None):
+    if not status in ['all', 'online', 'offline']:
+      raise Exception("Unknown status: %s" % status )
+
     t = get_utc_time()
     count = {'total': 0}
     cur = None
-    query = {}
 
+    # Query
+    tags = None
+    type = None
+    sortby = "id"
+    query = {}
     tags_array = []
     if tags:
       tags_array = tags.split(",")
@@ -239,6 +260,7 @@ class ControllerWithAPI(Controller):
     if status != 'all':
       query["status"] = { "$eq": status }
 
+    # Find
     try:
       col = self.db_col('nodes')
       cur = col.find( query, projection={"_id": False}).sort([
@@ -252,20 +274,24 @@ class ControllerWithAPI(Controller):
       return
 
     if(not count['total']):
-      msg = "No nodes found. Try to add a node with: add-ssh-node --id ... --pubkey ..."
+      msg = "No nodes found."
       print( msg )
-      return
-
+      return False
 
     table_header = [ 
-      "Status", "Controller", "Node", 
+      "Status", "Disabled", "Controller", "Node (IP Address)", 
       "Description", "SSH Key Algo", "SSH Client Version", 
-      "Last Update (UTC)"] 
+      "Last Update (UTC)", "Last Update (Local)"] 
     table = []
     table.append( table_header )
     for c in cur:
-      status = "offline"
-      if c["status"] == "online": status = "online"
+      status = "DOWN"
+      if c["status"] == "online":
+        status = "UP"
+
+      disabled = "Yes"
+      if not c["disabled"]:
+        disabled = ""
 
       cid = 'unknown'
       try:
@@ -287,7 +313,7 @@ class ControllerWithAPI(Controller):
         pass
 
       table.append( [ 
-        status, cid, nid, 
+        status, disabled, cid, nid, 
         c["description"], c["ssh_key_algo"], ssh_client,
         c["updatedAt"] ] )
     # for
@@ -295,7 +321,7 @@ class ControllerWithAPI(Controller):
     print("Record count: %s" % (count['total'] ) )
   # def
 
-  def api_node(self, id = None):
+  def api_show_node(self, id = None):
     t = get_utc_time()
     query = { 'id': valid_id(id) }
     try:
@@ -349,10 +375,10 @@ class ControllerWithAPI(Controller):
       return
   # def
 
-  def api_delete_node(self, id = None ):
+  def api_node_delete(self, id = None ):
     t = get_utc_time()
 
-    query = {'id': id}
+    query = {'id': valid_id(id)}
     try:
       col = self.db_col('nodes')
       res = col.delete_one( query )
@@ -365,7 +391,32 @@ class ControllerWithAPI(Controller):
       return
   # def
 
-  def api_add_node(self, id = 'test', pubkey = None, force = False, desc = None, type = 'ssh'):
+  def api_node_enable( self, id = None ):
+    t = get_utc_time()
+
+    query = {'id': valid_id(id)}
+    try:
+      col = self.db_col('nodes')
+      res = col.update_one( query, { '$set': {'disabled': False} }  )
+    except Exception as exc:
+      self.log( level = 'error', message = "Database error: %s" % exc )
+      return
+  # def
+
+  def api_node_disable( self, id = None ):
+    query = {'id': valid_id(id)}
+    try:
+      col = self.db_col('nodes')
+      res = col.update_one( query, { '$set': {'disabled': True} }  )
+    except Exception as exc:
+      self.log( level = 'error', message = "Database error: %s" % exc )
+      return
+  # def
+
+
+  def api_node_add(self, id = 'test', pubkey = None, force = False, desc = None, type = 'ssh'):
+    valid_id(id)
+
     t = get_utc_time()
     public_key = None
     algo = None
@@ -387,6 +438,7 @@ class ControllerWithAPI(Controller):
       self.log( level = 'error', message = "Database error: %s" % exc )
       return
 
+    # TODO: sanit
     description = ''
     if desc:
       description = desc
@@ -429,99 +481,102 @@ class ControllerWithAPI(Controller):
       return
   # def
 
-  def api_add_ssh_node(self, id = 'test', pubkey = None, force = False, desc = None):
-    ret = self.api_add_node(id = id, pubkey = pubkey, force = force, desc = desc, type = 'ssh')
-    return ret
-  # def
+  # def api_add_ssh_node(self, id = 'test', pubkey = None, force = False, desc = None):
+  #   ret = self.api_add_node(id = id, pubkey = pubkey, force = force, desc = desc, type = 'ssh')
+  #   return ret
+  # # def
 
-  def api_export_nodes(self, output = None ):
-    t = get_utc_time()
-    count = {'total': 0}
-    cur = None
-    query = {}
-    projection = { 
-      "_id": False,
-      "poller": False,
-      "extra_info": False
-    }
-    try:
-      col = self.db_col('nodes')
-      cur = col.find( query, projection ).sort("id")
-      count['total'] = col.count_documents( query )
-    except Exception as exc:
-      self.log( level = 'error', message = "Database error: %s" % exc )
-      return
+#  def api_export_nodes(self, output = None ):
+#    t = get_utc_time()
+#    count = {'total': 0}
+#    cur = None
+#    query = {}
+#    projection = { 
+#      "_id": False,
+#      "poller": False,
+#      "extra_info": False
+#    }
+#    try:
+#      col = self.db_col('nodes')
+#      cur = col.find( query, projection ).sort("id")
+#      count['total'] = col.count_documents( query )
+#    except Exception as exc:
+#      self.log( level = 'error', message = "Database error: %s" % exc )
+#      return
+#
+#    export = []
+#    for c in cur:
+#      node = {
+#        'id': c["id"],
+#        'description': c["description"],
+#        'disabled': c["disabled"],
+#        'node_type': c["node_type"],
+#        'ssh_fingerprint': c["ssh_fingerprint"],
+#        'ssh_key_algo': c["ssh_key_algo"],
+#        'ssh_pubkey': c["ssh_pubkey"],
+#      }
+#      try:
+#        node['tags']= c["tags"]
+#      except:
+#        pass 
+#      export.append( node )
+#    # for
+#
+#    self.logger.info("%s Nodes found in the Database" % count['total'])
+#    try:
+#      # print(json.dumps(nodes, indent=2, sort_keys=True))
+#      with open(output, 'w', encoding='utf-8') as out:
+#        json.dump(export, out, ensure_ascii=False, indent=2, sort_keys=True)
+#      self.log( level = 'info', message = "Nodes exported to JSON file: %s" % output)
+#    except Exception as exc:
+#      self.log( level = 'error', message = "Nodes export failed: %s" % output)
+#  # def
+#
+#  def api_import_nodes(self, input = None ):
+#    t = get_utc_time()
+#    query = {}
+#    try:
+#      with open(input, 'r', encoding='utf-8') as inp:
+#        data = json.load(inp)
+#        bulk_update = []
+#        for node in data:
+#          query = { 'id': node['id'] }
+#          update = node
+#          update['createdAt'] = t
+#          update['updatedAt'] = t
+#          update['status'] = 'new'
+#          bulk_update.append( UpdateOne( query, { '$set': update }, upsert=True ) )
+#      # for
+#      col = self.db_col('nodes')
+#      res = col.bulk_write( bulk_update )
+#      print("Matched: %s  Inserted: %s  Updated: %s  Upserted: %s" % ( res.matched_count, res.inserted_count, res.modified_count, res.upserted_count ) )
+#    except Exception as exc:
+#      self.log( level = 'error', message = "Nodes import failed: %s" % input )
+#  # def
+#
+#  def api_node_description(self, id = None, desc = 'Description' ):
+#    t = get_utc_time()
+#    query = {'id': valid_id(id)}
+#    node = None
+#    try:
+#      update = {
+#        'id': id,
+#        'description': desc,
+#        'updatedAt': t,
+#      }
+#      col = self.db_col('nodes')
+#      res = col.update_one( query, { '$set': update } )
+#    except Exception as exc:
+#      self.log( level = 'error', message = "Database error: %s" % exc )
+#      return
+#  # def
+#  # def
 
-    export = []
-    for c in cur:
-      node = {
-        'id': c["id"],
-        'description': c["description"],
-        'disabled': c["disabled"],
-        'node_type': c["node_type"],
-        'ssh_fingerprint': c["ssh_fingerprint"],
-        'ssh_key_algo': c["ssh_key_algo"],
-        'ssh_pubkey': c["ssh_pubkey"],
-      }
-      try:
-        node['tags']= c["tags"]
-      except:
-        pass 
-      export.append( node )
-    # for
-
-    self.logger.info("%s Nodes found in the Database" % count['total'])
-    try:
-      # print(json.dumps(nodes, indent=2, sort_keys=True))
-      with open(output, 'w', encoding='utf-8') as out:
-        json.dump(export, out, ensure_ascii=False, indent=2, sort_keys=True)
-      self.log( level = 'info', message = "Nodes exported to JSON file: %s" % output)
-    except Exception as exc:
-      self.log( level = 'error', message = "Nodes export failed: %s" % output)
-  # def
-
-  def api_import_nodes(self, input = None ):
-    t = get_utc_time()
-    query = {}
-    try:
-      with open(input, 'r', encoding='utf-8') as inp:
-        data = json.load(inp)
-        bulk_update = []
-        for node in data:
-          query = { 'id': node['id'] }
-          update = node
-          update['createdAt'] = t
-          update['updatedAt'] = t
-          update['status'] = 'new'
-          bulk_update.append( UpdateOne( query, { '$set': update }, upsert=True ) )
-      # for
-      col = self.db_col('nodes')
-      res = col.bulk_write( bulk_update )
-      print("Matched: %s  Inserted: %s  Updated: %s  Upserted: %s" % ( res.matched_count, res.inserted_count, res.modified_count, res.upserted_count ) )
-    except Exception as exc:
-      self.log( level = 'error', message = "Nodes import failed: %s" % input )
-  # def
-
-  def api_node_description(self, id = None, desc = 'Description' ):
-    t = get_utc_time()
-    query = {'id': valid_id(id)}
-    node = None
-    try:
-      update = {
-        'id': id,
-        'description': desc,
-        'updatedAt': t,
-      }
-      col = self.db_col('nodes')
-      res = col.update_one( query, { '$set': update } )
-    except Exception as exc:
-      self.log( level = 'error', message = "Database error: %s" % exc )
-      return
-  # def
-  # def
-
-  def api_allocate_port(self, id = None, service = 'ssh', port = None ):
+  def api_port_alloc(self, id = None, service = 'ssh'):
     # Add Node Transaction
+    valid_id(id)
+    valid_id(service)
+    port = None
     try:
       col_ports = self.db_col('ports')
       # col_nodes = self.db_col('nodes')
@@ -537,40 +592,47 @@ class ControllerWithAPI(Controller):
           col_ports.update_one( query, { '$set': update }, session = session)
         #
       #
-      print("Allocated port for service %s: %s" % ( service, next_empty['id'] ) )
+      print("Allocated port for %s:%s is %s" % ( id, service, next_empty['id'] ) )
     except Exception as exc:
       self.log( level = 'error', message = "Database error: %s" % exc )
       return
   # def
 
-  def api_test(self):
-    col = self.db_col('nodes')
-    pipeline = [ 
-      { '$lookup': { 'from': 'ports', 'localField': 'id', 'foreignField': 'node_id', 'as': 'ports' } },
-      { '$match': { 'ports.0' :{ '$exists': True } } },
-    # { '$reduce': { 'input': 'ports', 'in': { '$$this.service' : { '$eq': 'ssh '}  } }  },
-      { '$project': { '_id': False, 'id': True, 'ports': True } } ]
-    try:
-      res = col.aggregate(pipeline)
-      # pprint(list(res))
-      table = []
-      table.append([ "Id", "Ports" ] )
-      for c in res:
-        table.append( [ c["id"], c["ports"] ] )
-      # for
-      print( AsciiTable(table).table) 
-    except Exception as exc:
-      self.log( level = 'error', message = "Database error: %s" % exc )
-      return
+  def api_port_dealloc(self, id = None, service = 'ssh'):
+    # Add Node Transaction
+    valid_id(id)
+    valid_id(service)
+    port = None
   # def
 
-  def _test(self):
-    col_ports = self.db_col('ports')
-    res = col_ports.find( { 'node_id': 'rpi' }, { '_id': False, 'id': True} )
-    ports = []
-    for r in res:
-      ports.append(r['id'])
-    print(res, ports )
-  # def
+#  def api_test(self):
+#    col = self.db_col('nodes')
+#    pipeline = [ 
+#      { '$lookup': { 'from': 'ports', 'localField': 'id', 'foreignField': 'node_id', 'as': 'ports' } },
+#      { '$match': { 'ports.0' :{ '$exists': True } } },
+#    # { '$reduce': { 'input': 'ports', 'in': { '$$this.service' : { '$eq': 'ssh '}  } }  },
+#      { '$project': { '_id': False, 'id': True, 'ports': True } } ]
+#    try:
+#      res = col.aggregate(pipeline)
+#      # pprint(list(res))
+#      table = []
+#      table.append([ "Id", "Ports" ] )
+#      for c in res:
+#        table.append( [ c["id"], c["ports"] ] )
+#      # for
+#      print( AsciiTable(table).table) 
+#    except Exception as exc:
+#      self.log( level = 'error', message = "Database error: %s" % exc )
+#      return
+#  # def
+#
+#  def _test(self):
+#    col_ports = self.db_col('ports')
+#    res = col_ports.find( { 'node_id': 'rpi' }, { '_id': False, 'id': True} )
+#    ports = []
+#    for r in res:
+#      ports.append(r['id'])
+#    print(res, ports )
+#  # def
 
 # class

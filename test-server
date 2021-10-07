@@ -143,15 +143,20 @@ function start_client() {
     continue
   done
 
-  echo "add-ssh-node --id client --pubkey \"$client_pubkey}\"" | ./adminshell --mongo_uri mongodb://root:root@localhost:27019 --mongo_db sshnoc
+  echo "node add --id client --pubkey \"$client_pubkey}\"" | ./adminshell --mongo_uri mongodb://root:root@localhost:27019 --mongo_db sshnoc
+  ret=$?
+  echo "Exit code: $ret"
   echo "Client public key added"
-  sleep 1
+  sleep 3
   ssh -o VisualHostKey=no -o StrictHostKeyChecking=accept-new \
     -o UserKnownHostsFile=./ssh/known_hosts -R ./nodes/client/2244.sock:localhost:2244 \
     -i ./ssh/client -p 2322 client@localhost
+  ret=$?
+  echo "Exit code: $ret"
   echo "Stopping..."
+  sleep 3
   stop_mongo
-  sleep 1
+  sleep 3
   tmux kill-session -t test
 
   popd &> /dev/null

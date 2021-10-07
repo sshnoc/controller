@@ -25,6 +25,7 @@ KEEPALIVE = '30s'
 
 RESERVED_PORT_RANGE = [40000, 50000]
 
+VERSION = "0.0.1-free"
 
 # CONTROLLER SERVER
 class ControllerServer(Controller):
@@ -44,19 +45,34 @@ class ControllerServer(Controller):
     """Initialize database collections and indexes
 
     """
+
+    col = self.db_col('system')
+
+    res = None
+    try:
+      res = col.find_one( { 'id': "sshserver" } )
+      if(res):
+        self.log( level = 'info', message = "Found DB version: %s" % res["version"])
+        return True
+    except:
+      pass
+
     t = get_utc_time()
 
     # Controller Servers
     col = self.db_col('controllers')
-    col.create_index( [ ("id", 1), ("controller_type", 1), ("status", 1) ] )
+    col.create_index( [ ("id", 1), ("controller_type", 1), ("status", 1) ] ) 
+    self.log( level = 'info', message = "DB index created: controllers")
 
     # Client Nodes
     col = self.db_col('nodes')
     col.create_index( [ ("id", 1), ("controller_type", 1), ("status", 1) ] )
+    self.log( level = 'info', message = "DB index created: nodes")
 
     # Connection tracking for tunnel sockets
     col = self.db_col('sockets')
     col.create_index( [ ("id", 1), ("key", 1) ] )
+    self.log( level = 'info', message = "DB index created: sockets")
 
     # Port allocations for local forward tunnels
     col = self.db_col('ports')
@@ -66,7 +82,8 @@ class ControllerServer(Controller):
       update = { '$set': { 'id': i, 'node_id': None } }
       bulk_update.append( UpdateOne({ 'id': i }, update, upsert=True ) )
     # for
-    result = col.bulk_write( bulk_update )
+    col.bulk_write( bulk_update )
+    self.log( level = 'info', message = "Port allocations created (%s - %s)" % (RESERVED_PORT_RANGE[0], RESERVED_PORT_RANGE[1]))
 
     # Eventlog
     db = None
@@ -77,26 +94,32 @@ class ControllerServer(Controller):
       pass
     col = self.db_col('events')
     col.create_index( [ ("id", 1), ("time", 1), ("controller_id", 1), ("node_id", 1) ] )
+    self.log( level = 'info', message = "DB index created: events")
 
-    # FUTURE: Sites
-    col = self.db_col('sites')
-    col.create_index( [ ("id", 1), ("description", 1) ] )
-    update = { 
-      'id': 'default',
-      'updatedAt': t,
-      'description': 'Default Site'
+#    # FUTURE: Sites
+#    col = self.db_col('sites')
+#    col.create_index( [ ("id", 1), ("description", 1) ] )
+#    update = { 
+#      'id': 'default',
+#      'updatedAt': t,
+#      'description': 'Default Site'
+#    }
+#    col.update_one({ 'id': 'default' }, { '$set': update }, upsert=True )
+#
+#    # FUTURE: Networking
+#    col = self.db_col('vlans')
+#    col.create_index( [ ("id", 1), ("tag", 1) ] )
+#    col = self.db_col('wlans')
+#    col.create_index( [ ("id", 1), ("tag", 1) ] )
+
+    col = self.db_col('system')
+    data = {
+      "id": "sshserver",
+      "version": VERSION,
+      "createdAt": t
     }
-    col.update_one({ 'id': 'default' }, { '$set': update }, upsert=True )
-
-    # FUTURE: Networking
-    col = self.db_col('vlans')
-    col.create_index( [ ("id", 1), ("tag", 1) ] )
-
-    col = self.db_col('wlans')
-    col.create_index( [ ("id", 1), ("tag", 1) ] )
-
-    message = "Database initialized"
-    self.log( level = 'info', message = message, store = True )
+    col.insert_one(data)
+    self.log( level = 'info', message = "Database initialized (%s)" % VERSION, store = True )
   # def
 
 

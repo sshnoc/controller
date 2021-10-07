@@ -53,7 +53,6 @@ docker-compose up
 
 First, initialize the database then start the controller:
 ```bash
-./sshserver --mongo_uri mongodb://root:root@localhost:27019 --mongo_db sshnoc --init_db
 ./sshserver --mongo_uri mongodb://root:root@localhost:27019 --mongo_db sshnoc --debug --ssh_port 2322 --http_admin_port 2380
 ```
 
